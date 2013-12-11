@@ -1,0 +1,88 @@
+#!/usr/bin/env ruby
+
+require "pp"
+
+class BinaryFile
+  def initialize(path)
+    @path = path
+    @data = File.read(path)
+    @ofs  = 0
+  end
+
+  def size
+    @data.size
+  end
+
+  def get(sz)
+    if @ofs + sz > size
+      raise "Reading past end of file: #{path}:#{@ofs}+#{sz}"
+    end
+    rv = @data[@ofs, sz]
+    @ofs += sz
+    rv
+  end
+
+  def get_u2
+    get(2).unpack("v")[0]
+  end
+
+  def get_u4
+    get(4).unpack("V")[0]
+  end
+end
+
+class UpkFile < BinaryFile
+  def verify_magic!
+    actual = get(4)
+    return if actual == "\xc1\x83\x2a\x9e"
+    warn "Wrong magic number: #{actual.inspect}"
+  end
+
+  def get_str
+    s = get(get_u4)
+    return s[0...-1] if s[-1..-1] == "\x00"
+    warn "String not NUL-terminated: #{s.inspect}"
+    s
+  end
+
+  def print_info!
+    verify_magic!
+    pp [
+      version: get_u2,
+      license_version: get_u2,
+      header_size: get_u4,
+      folder: get_str,
+      package_flags: get_u4,
+      name_count: get_u4,
+      name_offset: (@name_ofs = get_u4),
+      export_count: get_u4,
+      export_offset: get_u4,
+      import_count: get_u4,
+      import_offset: get_u4,
+      depends_offset: get_u4,
+      unknown_1: get_u4,
+      unknown_2: get_u4,
+      unknown_3: get_u4,
+      unknown_4: get_u4,
+      guid: get(16),
+      generations: (0...get_u4).map{ [get_u4, get_u4, get_u4] },
+      engine_version: get_u4,
+      cooker_version: get_u4,
+      compression_flags: get_u4,
+    ]
+
+    puts "Offset: #{@ofs}, expected: #{@name_ofs}"
+
+    # General structure is supposedly:
+    #   Header
+    #   Name-Table
+    #   Import-Table
+    #   Data
+    #   Export-Table
+  end
+end
+
+ARGV.each do |path|
+  upk = UpkFile.new(path)
+  upk.print_info!
+end
